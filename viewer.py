@@ -7,8 +7,12 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import inspect
 import numbers
+import sys
+import scipy
+import scipy.ndimage.filters as filters
 
 sp.init_printing()
+pv.global_theme.allow_empty_mesh = True
 
 def shape_operator(f, x, y, R):
     fx = R.i + R.k * sp.diff(f, x)
@@ -81,12 +85,19 @@ def numeric_adirs(kappas, pdirs):
     # same size
     theta1_pos = np.arctan(np.sqrt(k1pos[:,0])/np.sqrt(-k1pos[:,1]))
     theta2_pos = np.pi - theta1_pos
-    theta_pos = np.vstack([theta1_pos, theta2_pos]).T
+    theta_pos = np.vstack([
+                            np.maximum(theta1_pos, theta2_pos),
+                            np.minimum(theta1_pos, theta2_pos)
+                           ]).T
     
     # same size
     theta1_neg = np.arctan(np.sqrt(-k1neg[:,0])/np.sqrt(k1neg[:,1]))
     theta2_neg = np.pi - theta1_neg
-    theta_neg = np.vstack([theta1_neg, theta2_neg]).T
+    # theta_neg = np.vstack([theta1_neg, theta2_neg]).T
+    theta_neg = np.vstack([
+                            np.maximum(theta1_neg, theta2_neg),
+                            np.minimum(theta1_neg, theta2_neg)
+                           ]).T
     
     thetas = np.zeros_like(kappas)
     thetas[pos_k1_mask] = theta_pos
@@ -169,14 +180,22 @@ def normal(f, x, y, R):
     n = 1 / norm * (R.i*fx + R.j*fy + R.k*fz)
     return n
 
+def make_glyphs(data, mask=None, **kwargs):
+    
+    masked_data = data.glyph(**kwargs)
+    if mask is None or mask.sum()==0:
+        return masked_data
+    masked_data = masked_data.remove_cells(mask)
+    return masked_data
+
 if __name__=='__main__':
     x, y = sp.symbols('x y')
-    f_input = input("Equation: ").strip()
+    f_input = input("Equation: ").strip() if len(sys.argv)==1 else sys.argv[1].strip()
     f = sp.parse_expr(f_input)
     f_num = np.vectorize(sp.lambdify([x, y], f))
     S, I, II = _shape_operator(f, x, y)
     
-    xs, ys = np.linspace(-1, 1, 31), np.linspace(-1,1,31)
+    xs, ys = np.linspace(-2, 2, 61), np.linspace(-2, 2, 61)
     X, Y = np.meshgrid(xs, ys, indexing='xy')
     X_small, Y_small = np.meshgrid(np.linspace(xs.min(), xs.max(), 15),
                                    np.linspace(ys.min(), ys.max(), 15))
@@ -187,65 +206,63 @@ if __name__=='__main__':
     poly = pv.PolyData(points)
     surf = pv.StructuredGrid(X, Y, f_vals)
     
-    d1, d2 = symbolic_pdirs(S, f, x, y, X, Y)
-    print(d1.shape, d2.shape)
-    
-    # poly['d1'] = pdirs[:,:,0]
-    # poly['d2'] = pdirs[:,:,1]
-    poly['d1'] = d1
-    poly['d2'] = d2
-    poly['d1_'] = pdirs[:,:,0]
-    poly['d2_'] = pdirs[:,:,1]
-    surf['d1'] = pdirs[:,:,0]
-    surf['d2'] = pdirs[:,:,1]
-    surf['gaussian_k'] = np.prod(pcurvs, -1).reshape(X.shape).T.ravel()
-    surf['clasticity'] = np.sum(np.sign(pcurvs),-1).reshape(X.shape).T.ravel()
-    surf['parabolics'] = (np.abs(np.prod(pcurvs, -1))<0.01).reshape(X.shape).T.ravel()
+    eps = 1e-7
+    poly.point_data['d1'] = pdirs[:,:,0]
+    poly.point_data['d2'] = pdirs[:,:,1]
+    surf.point_data['d1'] = pdirs[:,:,0]
+    surf.point_data['d2'] = pdirs[:,:,1]
+    surf.point_data['gaussian_k'] = np.prod(pcurvs, -1).reshape(X.shape).T.ravel()
+    surf.point_data['kg_under'] = surf.point_data['gaussian_k'] - eps
+    surf.point_data['kg_over'] = surf.point_data['gaussian_k'] + eps
+    surf.point_data['clasticity'] = np.sum(np.sign(pcurvs),-1).reshape(X.shape).T.ravel()
+    surf.point_data['parabolics'] = (np.abs(np.prod(pcurvs, -1))<0.01).reshape(X.shape).T.ravel()
     
     adirs = numeric_adirs(pcurvs, pdirs)
     print(np.sum(np.prod(pdirs,-1),-1).max())
-    poly['a1'] = adirs[:,:,0]
-    poly['a2'] = adirs[:,:,1]
-    surf['a1'] = adirs[:,:,0]
-    surf['a2'] = adirs[:,:,1]
+    poly.point_data['a1'] = adirs[:,:,0]
+    poly.point_data['a2'] = adirs[:,:,1]
+    surf.point_data['a1'] = adirs[:,:,0]
+    surf.point_data['a2'] = adirs[:,:,1]
     
     line = pv.Line()
-    d1_arrows = poly.glyph(geom=line, scale=False, factor=0.07, orient='d1')
-    d2_arrows = poly.glyph(geom=line, scale=False, factor=0.07, orient='d2')
-    a1_arrows = poly.glyph(geom=line, scale=False, factor=0.07, orient='a1')
-    a2_arrows = poly.glyph(geom=line, scale=False, factor=0.07, orient='a2')
+    synclastic_mask = (np.prod(pcurvs, -1) > 0)
+    d1_arrows = make_glyphs(poly, mask=synclastic_mask,
+                            geom=line, scale=False, factor=0.04, orient='d1')
+    d2_arrows = make_glyphs(poly, mask=synclastic_mask,
+                            geom=line, scale=False, factor=0.04, orient='d2')
+    a1_arrows = make_glyphs(poly, mask=synclastic_mask,
+                            geom=line, scale=False, factor=0.04, orient='a1')
+    a2_arrows = make_glyphs(poly, mask=synclastic_mask,
+                            geom=line, scale=False, factor=0.04, orient='a2')
+
+    # compute ridges
+    # ridges are local extrema of principal curvatures when traveling in a principal direction
+    
+    
     plotter = pv.Plotter()
     # plotter.add_mesh(d1_arrows, color='black', line_width=3)
     # plotter.add_mesh(d2_arrows, color='black', line_width=3)
     plotter.add_mesh(a1_arrows, color='red', line_width=3)
-    plotter.add_mesh(a2_arrows, color='blue', line_width=3)
+    plotter.add_mesh(a2_arrows, color='red', line_width=3)
     plotter.add_axes()
     # plotter.add_mesh(poly, scalars='min_curv')
     
-    source_pts = surf.points.reshape(len(xs), len(ys), 3)[np.arange(0,len(xs),10),0]
-    streamline1 = surf.streamlines_from_source(
-        source=pv.PolyData(source_pts),
-        vectors='a1',
-        integration_direction='both',
-        surface_streamlines=True,
-        max_steps=2000,
-        initial_step_length=0.01,
-        terminal_speed=0.0,
-        compute_vorticity=False,
-    )
-    streamline2 = surf.streamlines_from_source(
-        source=pv.PolyData(source_pts),
-        vectors='a2',
-        integration_direction='both',
-        surface_streamlines=True,
-        max_steps=2000,
-        initial_step_length=0.1,
-        terminal_speed=0.0,
-        compute_vorticity=False,
-    )
-    plotter.add_mesh(streamline1.tube(radius=0.01), color='red')
-    # plotter.add_mesh(streamline2.tube(radius=0.01), color='blue')
-    grid_point_data = surf.cell_data_to_point_data()
     plotter.add_mesh(surf, scalars='gaussian_k')
-    # plotter.add_mesh(grid_point_data.contour([0.0], scalars='gaussian_k'), color="white", line_width=5)
+    pos_parabolic = surf.contour([0.0], scalars='kg_over')
+    neg_parabolic = surf.contour([0.0], scalars='kg_under')
+    parabolic = pos_parabolic.merge(neg_parabolic)
+    # plotter.add_mesh(parabolic, color="white", line_width=5)
+    # source_pts = pv.PolyData(points[synclastic_mask][::11])
+    # streamlines1 = surf.copy().streamlines_from_source(
+    #     source_pts,
+    #     vectors='a1',
+    #     integration_direction='both',
+    #     surface_streamlines=True,
+    #     initial_step_length=0.01,
+    #     step_unit='l',
+    #     compute_vorticity=False,
+    #     interpolator_type='point'
+    # )
+    # plotter.add_mesh(streamlines1.tube(radius=0.02), color='red')
+    
     plotter.show()
