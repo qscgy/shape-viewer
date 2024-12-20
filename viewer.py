@@ -10,6 +10,7 @@ import numbers
 import sys
 import scipy
 import scipy.ndimage.filters as filters
+import yaml
 
 sp.init_printing()
 pv.global_theme.allow_empty_mesh = True
@@ -184,18 +185,17 @@ def make_glyphs(data, mask=None, **kwargs):
     return masked_data
 
 if __name__=='__main__':
+    with open(sys.argv[1], 'r') as f:
+        cfg = yaml.safe_load(f)
     x, y = sp.symbols('x y')
-    f_input = input("Equation: ").strip() if len(sys.argv)==1 else sys.argv[1].strip()
+    f_input = cfg['equation'].strip()
     f = sp.parse_expr(f_input)
     f_num = np.vectorize(sp.lambdify([x, y], f))
     S, I, II = _shape_operator(f, x, y)
     
-    xmin, xmax, ymin, ymax = -2, 2, -2, 2
-    xs, ys = np.linspace(xmin, xmax, 61), np.linspace(ymin, ymax, 61)
+    xmin, xmax, ymin, ymax = cfg['lims']['xmin'], cfg['lims']['xmax'], cfg['lims']['ymin'], cfg['lims']['ymax']
+    xs, ys = np.linspace(xmin, xmax, cfg['lims']['steps']), np.linspace(ymin, ymax, cfg['lims']['steps'])
     X, Y = np.meshgrid(xs, ys, indexing='xy')
-    X_small, Y_small = np.meshgrid(np.linspace(xs.min(), xs.max(), 15),
-                                   np.linspace(ys.min(), ys.max(), 15))
-    # Y = np.flipud(Y)
     f_vals = f_num(X, Y)
     points = np.stack([X, Y, f_vals], 2).reshape(-1,3)
     pcurvs, pdirs = numeric_pdirs(S, f, x, y, X, Y)
@@ -214,68 +214,69 @@ if __name__=='__main__':
     surf.point_data['parabolics'] = (np.abs(np.prod(pcurvs, -1))<0.01)
     
     adirs = numeric_adirs(pcurvs, pdirs)
-    print(np.sum(np.prod(pdirs,-1),-1).max())
     poly.point_data['a1'] = adirs[:,:,0]
     poly.point_data['a2'] = adirs[:,:,1]
     surf.point_data['a1'] = adirs[:,:,0]
     surf.point_data['a2'] = adirs[:,:,1]
     
-    line = pv.Line()
-    line=None
-    synclastic_mask = (np.prod(pcurvs, -1) > 0)
-    d1_arrows = make_glyphs(poly, mask=synclastic_mask,
-                            geom=line, scale=False, factor=0.04, orient='d1')
-    d2_arrows = make_glyphs(poly, mask=synclastic_mask,
-                            geom=line, scale=False, factor=0.04, orient='d2')
-    a1_arrows = make_glyphs(poly, mask=synclastic_mask,
-                            geom=line, scale=False, factor=0.04, orient='a1')
-    a2_arrows = make_glyphs(poly, mask=synclastic_mask,
-                            geom=line, scale=False, factor=0.04, orient='a2')
+    plotter = pv.Plotter()
+    plotter.add_axes()    
+    plotter.add_mesh(surf, scalars='gaussian_k')
 
-    # compute ridges
+    line = pv.Line()
+    synclastic_mask = (np.prod(pcurvs, -1) > 0)
+    if cfg['principal_dirs']['plot']:
+        d1_arrows = make_glyphs(poly, mask=synclastic_mask,
+                                geom=line, scale=False, factor=0.04, orient='d1')
+        d2_arrows = make_glyphs(poly, mask=synclastic_mask,
+                                geom=line, scale=False, factor=0.04, orient='d2')
+        plotter.add_mesh(d1_arrows, color=cfg['principal_dirs']['colors'][0], line_width=3)
+        plotter.add_mesh(d2_arrows, color=cfg['principal_dirs']['colors'][1], line_width=3)
+    if cfg['asymptotic_dirs']['plot']:
+        a1_arrows = make_glyphs(poly, mask=synclastic_mask,
+                                geom=line, scale=False, factor=0.04, orient='a1')
+        a2_arrows = make_glyphs(poly, mask=synclastic_mask,
+                                geom=line, scale=False, factor=0.04, orient='a2')
+        plotter.add_mesh(a1_arrows, color=cfg['asymptotic_dirs']['colors'][0], line_width=3)
+        plotter.add_mesh(a2_arrows, color=cfg['asymptotic_dirs']['colors'][1], line_width=3)
+
+    # TODO compute ridges
     # ridges are local extrema of principal curvatures when traveling in a principal direction
     
+    if cfg['parabolic_curves']:
+        pos_parabolic = surf.contour([0.0], scalars='kg_over')
+        neg_parabolic = surf.contour([0.0], scalars='kg_under')
+        parabolic = pos_parabolic.merge(neg_parabolic)
+        plotter.add_mesh(parabolic, color="white", line_width=5)
     
-    plotter = pv.Plotter()
-    plotter.add_mesh(d1_arrows, color='black', line_width=3)
-    plotter.add_mesh(d2_arrows, color='orange', line_width=3)
-    plotter.add_mesh(a1_arrows, color='red', line_width=3)
-    plotter.add_mesh(a2_arrows, color='blue', line_width=3)
-    plotter.add_axes()
-    # plotter.add_mesh(poly, scalars='min_curv')
-    
-    plotter.add_mesh(surf, scalars='gaussian_k')
-    pos_parabolic = surf.contour([0.0], scalars='kg_over')
-    neg_parabolic = surf.contour([0.0], scalars='kg_under')
-    parabolic = pos_parabolic.merge(neg_parabolic)
-    plotter.add_mesh(parabolic, color="white", line_width=5)
-    source_mask = np.zeros(X.shape).astype(bool)
-    source_mask[::2,::2] = True
-    source_mask = source_mask.ravel()
-    source_pts = pv.PolyData(points[source_mask][~synclastic_mask[source_mask]])
-    streamlines1 = surf.copy().streamlines_from_source(
-        source_pts,
-        vectors='a1',
-        integration_direction='both',
-        surface_streamlines=True,
-        initial_step_length=0.03,
-        step_unit='cl',
-        compute_vorticity=False,
-        interpolator_type='point',
-        max_steps=2000
-    )
-    streamlines2 = surf.copy().streamlines_from_source(
-        source_pts,
-        vectors='a2',
-        integration_direction='both',
-        surface_streamlines=True,
-        initial_step_length=0.03,
-        step_unit='cl',
-        compute_vorticity=False,
-        interpolator_type='point',
-        max_steps=2000
-    )
-    plotter.add_mesh(streamlines1.tube(radius=(xmax-xmin)/(len(xs)*20)), color='red')
-    plotter.add_mesh(streamlines2.tube(radius=(xmax-xmin)/(len(xs)*20)), color='blue')
+    if cfg['asymptotic_dirs']['draw_curves']:
+        source_mask = np.zeros(X.shape).astype(bool)
+        source_mask[::3,::3] = True
+        source_mask = source_mask.ravel()
+        source_pts = pv.PolyData(points[source_mask][~synclastic_mask[source_mask]])
+        streamlines1 = surf.copy().streamlines_from_source(
+            source_pts,
+            vectors='a1',
+            integration_direction='both',
+            surface_streamlines=True,
+            initial_step_length=0.03,
+            step_unit='cl',
+            compute_vorticity=False,
+            interpolator_type='point',
+            max_steps=2000
+        )
+        streamlines2 = surf.copy().streamlines_from_source(
+            source_pts,
+            vectors='a2',
+            integration_direction='both',
+            surface_streamlines=True,
+            initial_step_length=0.03,
+            step_unit='l',
+            compute_vorticity=False,
+            interpolator_type='point',
+            max_steps=2000
+        )
+        plotter.add_mesh(streamlines1.tube(radius=(xmax-xmin)/(len(xs)*15)), color=cfg['asymptotic_dirs']['colors'][0])
+        plotter.add_mesh(streamlines2.tube(radius=(xmax-xmin)/(len(xs)*15)), color=cfg['asymptotic_dirs']['colors'][1])
     
     plotter.show()

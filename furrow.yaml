@@ -1,4 +1,5 @@
-equation: 0.5*(x**2*y**2)
+---
+equation: 1 - x*x - y*y - 2.5*exp(-(x*x/4 + y*y))
 lims:
   xmin: -1
   xmax: 1
@@ -6,13 +7,11 @@ lims:
   ymax: 1
   steps: 61
 principal_dirs:
-  plot: True
+  plot: False
   colors: ["black", "orange"]
-  style: "lines"
   draw_curves: False
 asymptotic_dirs:
-  plot: True
+  plot: False
   colors: ["red", "blue"]
-  style: "lines"
-  draw_curves:
+  draw_curves: True
 parabolic_curves: True
