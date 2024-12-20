@@ -70,7 +70,6 @@ def principal_dirs(S, x, y, fx, fy, R):
     return curvatures, vecs
 
 def numeric_adirs(kappas, pdirs):
-    hyperbolic_mask = np.prod(kappas,1)<=0
     # w = cos(x) e1 + sin(x) e2
     # k1 cos^2(x) + k2 sin^2(x) = 0
     # k1 cos^2(x) = -k2 sin^2(x)
@@ -78,30 +77,18 @@ def numeric_adirs(kappas, pdirs):
     # make sure k1 is the positive one (because sign(k1) != sign(k2))
     # pi-x is a solution if x is (0<=x<=pi)
     pdirs = pdirs/np.sqrt((pdirs**2).sum(1, keepdims=True))
-    pos_k1_mask = (kappas[:,0] > 0) * hyperbolic_mask
-    k1pos = kappas[pos_k1_mask]
-    k1neg = kappas[~pos_k1_mask]
-    
-    # same size
-    theta1_pos = np.arctan(np.sqrt(k1pos[:,0])/np.sqrt(-k1pos[:,1]))
-    theta2_pos = np.pi - theta1_pos
-    theta_pos = np.vstack([
-                            np.maximum(theta1_pos, theta2_pos),
-                            np.minimum(theta1_pos, theta2_pos)
-                           ]).T
-    
-    # same size
-    theta1_neg = np.arctan(np.sqrt(-k1neg[:,0])/np.sqrt(k1neg[:,1]))
-    theta2_neg = np.pi - theta1_neg
-    # theta_neg = np.vstack([theta1_neg, theta2_neg]).T
-    theta_neg = np.vstack([
-                            np.maximum(theta1_neg, theta2_neg),
-                            np.minimum(theta1_neg, theta2_neg)
-                           ]).T
-    
-    thetas = np.zeros_like(kappas)
-    thetas[pos_k1_mask] = theta_pos
-    thetas[~pos_k1_mask] = theta_neg
+    hyperbolic_mask = (np.prod(kappas,1)<=0)[:,None].repeat(2,1)
+    hyper_kappas = np.ma.array(kappas, mask=~hyperbolic_mask)
+    thetas = np.arctan(np.sqrt(-hyper_kappas[:,0]/(1e-6 + hyper_kappas[:,1])))
+    thetas = np.vstack([
+        thetas,
+        - thetas
+    ]).T
+    # thetas = np.vstack([
+    #     np.minimum(thetas, np.pi - thetas),
+    #     np.maximum(thetas, np.pi - thetas)
+    # ]).T
+    thetas[~hyperbolic_mask] = np.nan
     components = np.stack([np.cos(thetas), np.sin(thetas)], 1)
     adirs = np.matmul(pdirs, components.data)
     return adirs
@@ -129,16 +116,20 @@ def _vectorize_matrix(vars, M):
     return _vectorizedfunc
 
 def numeric_pdirs(S, f, x, y, X, Y):
-    S_num = _vectorize_matrix([x, y], S)
+    S_num = np.vectorize(sp.lambdify([x, y], S), signature='(),()->(2,2)')
     fx = sp.lambdify([x, y], sp.diff(f, x))
     fy = sp.lambdify([x, y], sp.diff(f, y))
+    f_num = sp.lambdify([x, y], f)
+    fs = np.vstack([X.ravel(), Y.ravel(), f_num(X.ravel(), Y.ravel())]).T
     Ss = S_num(X.ravel(), Y.ravel())
     if Ss.ndim==2:
         Ss = np.repeat(Ss[...,None], X.size, 2)
-    Ss = np.moveaxis(Ss, -1, 0)
     fxs = fx(X.ravel(), Y.ravel())
     fys = fy(X.ravel(), Y.ravel())
     pcurvs, evecs = np.linalg.eig(Ss)
+    idx = pcurvs.argsort(axis=1)
+    pcurvs = np.take_along_axis(pcurvs, idx, 1)
+    evecs = np.take_along_axis(evecs.swapaxes(1,2), idx[...,None], 1).swapaxes(1,2)
 
     e1 = np.vstack([np.ones_like(fxs),
                     np.zeros_like(fxs),
@@ -149,6 +140,10 @@ def numeric_pdirs(S, f, x, y, X, Y):
     d1 = evecs[:,0,0]*e1 + evecs[:,1,0]*e2
     d2 = evecs[:,0,1]*e1 + evecs[:,1,1]*e2
     pdirs = np.stack([d1.T, d2.T], 2)
+    normals = np.cross(pdirs[...,0], pdirs[...,1])
+    pdirs[normals[...,2] < 0,:,1] *= -1
+    xys = (fs  - np.min(fs, 0, keepdims=True) ) * np.array([[1., 1., 0.]])
+    pdirs[np.cross(xys,(pdirs[...,0]))[...,2] < 0] *= -1  # enforce chirality condition so flows can be computed
     return pcurvs, pdirs
 
 def symbolic_pdirs(S, f, x, y, X, Y):
@@ -181,11 +176,11 @@ def normal(f, x, y, R):
     return n
 
 def make_glyphs(data, mask=None, **kwargs):
-    
-    masked_data = data.glyph(**kwargs)
+    partial_data = data.remove_cells(mask)
+    masked_data = partial_data.glyph(**kwargs)
     if mask is None or mask.sum()==0:
         return masked_data
-    masked_data = masked_data.remove_cells(mask)
+    print(masked_data)
     return masked_data
 
 if __name__=='__main__':
@@ -195,7 +190,8 @@ if __name__=='__main__':
     f_num = np.vectorize(sp.lambdify([x, y], f))
     S, I, II = _shape_operator(f, x, y)
     
-    xs, ys = np.linspace(-2, 2, 61), np.linspace(-2, 2, 61)
+    xmin, xmax, ymin, ymax = -2, 2, -2, 2
+    xs, ys = np.linspace(xmin, xmax, 61), np.linspace(ymin, ymax, 61)
     X, Y = np.meshgrid(xs, ys, indexing='xy')
     X_small, Y_small = np.meshgrid(np.linspace(xs.min(), xs.max(), 15),
                                    np.linspace(ys.min(), ys.max(), 15))
@@ -204,18 +200,18 @@ if __name__=='__main__':
     points = np.stack([X, Y, f_vals], 2).reshape(-1,3)
     pcurvs, pdirs = numeric_pdirs(S, f, x, y, X, Y)
     poly = pv.PolyData(points)
-    surf = pv.StructuredGrid(X, Y, f_vals)
+    surf = pv.StructuredGrid(Y, X, f_vals.T)
     
     eps = 1e-7
     poly.point_data['d1'] = pdirs[:,:,0]
     poly.point_data['d2'] = pdirs[:,:,1]
     surf.point_data['d1'] = pdirs[:,:,0]
     surf.point_data['d2'] = pdirs[:,:,1]
-    surf.point_data['gaussian_k'] = np.prod(pcurvs, -1).reshape(X.shape).T.ravel()
+    surf.point_data['gaussian_k'] = np.prod(pcurvs, -1)
     surf.point_data['kg_under'] = surf.point_data['gaussian_k'] - eps
     surf.point_data['kg_over'] = surf.point_data['gaussian_k'] + eps
-    surf.point_data['clasticity'] = np.sum(np.sign(pcurvs),-1).reshape(X.shape).T.ravel()
-    surf.point_data['parabolics'] = (np.abs(np.prod(pcurvs, -1))<0.01).reshape(X.shape).T.ravel()
+    surf.point_data['clasticity'] = np.sum(np.sign(pcurvs), -1)
+    surf.point_data['parabolics'] = (np.abs(np.prod(pcurvs, -1))<0.01)
     
     adirs = numeric_adirs(pcurvs, pdirs)
     print(np.sum(np.prod(pdirs,-1),-1).max())
@@ -225,6 +221,7 @@ if __name__=='__main__':
     surf.point_data['a2'] = adirs[:,:,1]
     
     line = pv.Line()
+    line=None
     synclastic_mask = (np.prod(pcurvs, -1) > 0)
     d1_arrows = make_glyphs(poly, mask=synclastic_mask,
                             geom=line, scale=False, factor=0.04, orient='d1')
@@ -240,10 +237,10 @@ if __name__=='__main__':
     
     
     plotter = pv.Plotter()
-    # plotter.add_mesh(d1_arrows, color='black', line_width=3)
-    # plotter.add_mesh(d2_arrows, color='black', line_width=3)
+    plotter.add_mesh(d1_arrows, color='black', line_width=3)
+    plotter.add_mesh(d2_arrows, color='orange', line_width=3)
     plotter.add_mesh(a1_arrows, color='red', line_width=3)
-    plotter.add_mesh(a2_arrows, color='red', line_width=3)
+    plotter.add_mesh(a2_arrows, color='blue', line_width=3)
     plotter.add_axes()
     # plotter.add_mesh(poly, scalars='min_curv')
     
@@ -251,18 +248,34 @@ if __name__=='__main__':
     pos_parabolic = surf.contour([0.0], scalars='kg_over')
     neg_parabolic = surf.contour([0.0], scalars='kg_under')
     parabolic = pos_parabolic.merge(neg_parabolic)
-    # plotter.add_mesh(parabolic, color="white", line_width=5)
-    # source_pts = pv.PolyData(points[synclastic_mask][::11])
-    # streamlines1 = surf.copy().streamlines_from_source(
-    #     source_pts,
-    #     vectors='a1',
-    #     integration_direction='both',
-    #     surface_streamlines=True,
-    #     initial_step_length=0.01,
-    #     step_unit='l',
-    #     compute_vorticity=False,
-    #     interpolator_type='point'
-    # )
-    # plotter.add_mesh(streamlines1.tube(radius=0.02), color='red')
+    plotter.add_mesh(parabolic, color="white", line_width=5)
+    source_mask = np.zeros(X.shape).astype(bool)
+    source_mask[::2,::2] = True
+    source_mask = source_mask.ravel()
+    source_pts = pv.PolyData(points[source_mask][~synclastic_mask[source_mask]])
+    streamlines1 = surf.copy().streamlines_from_source(
+        source_pts,
+        vectors='a1',
+        integration_direction='both',
+        surface_streamlines=True,
+        initial_step_length=0.03,
+        step_unit='cl',
+        compute_vorticity=False,
+        interpolator_type='point',
+        max_steps=2000
+    )
+    streamlines2 = surf.copy().streamlines_from_source(
+        source_pts,
+        vectors='a2',
+        integration_direction='both',
+        surface_streamlines=True,
+        initial_step_length=0.03,
+        step_unit='cl',
+        compute_vorticity=False,
+        interpolator_type='point',
+        max_steps=2000
+    )
+    plotter.add_mesh(streamlines1.tube(radius=(xmax-xmin)/(len(xs)*20)), color='red')
+    plotter.add_mesh(streamlines2.tube(radius=(xmax-xmin)/(len(xs)*20)), color='blue')
     
     plotter.show()
