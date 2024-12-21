@@ -78,7 +78,7 @@ def numeric_adirs(kappas, pdirs):
     # make sure k1 is the positive one (because sign(k1) != sign(k2))
     # pi-x is a solution if x is (0<=x<=pi)
     pdirs = pdirs/np.sqrt((pdirs**2).sum(1, keepdims=True))
-    hyperbolic_mask = (np.prod(kappas,1)<=0)[:,None].repeat(2,1)
+    hyperbolic_mask = (np.prod(kappas,1)<0)[:,None].repeat(2,1)
     hyper_kappas = np.ma.array(kappas, mask=~hyperbolic_mask)
     thetas = np.arctan(np.sqrt(-hyper_kappas[:,0]/(1e-6 + hyper_kappas[:,1])))
     thetas = np.vstack([
@@ -123,7 +123,7 @@ def numeric_pdirs(S, f, x, y, X, Y):
     f_num = sp.lambdify([x, y], f)
     fs = np.vstack([X.ravel(), Y.ravel(), f_num(X.ravel(), Y.ravel())]).T
     Ss = S_num(X.ravel(), Y.ravel())
-    if Ss.ndim==2:
+    if Ss.ndim == 2:
         Ss = np.repeat(Ss[...,None], X.size, 2)
     fxs = fx(X.ravel(), Y.ravel())
     fys = fy(X.ravel(), Y.ravel())
@@ -143,9 +143,10 @@ def numeric_pdirs(S, f, x, y, X, Y):
     pdirs = np.stack([d1.T, d2.T], 2)
     normals = np.cross(pdirs[...,0], pdirs[...,1])
     pdirs[normals[...,2] < 0,:,1] *= -1
+    normals[normals[...,2] < 0] *= -1
     xys = (fs  - np.min(fs, 0, keepdims=True) ) * np.array([[1., 1., 0.]])
     pdirs[np.cross(xys,(pdirs[...,0]))[...,2] < 0] *= -1  # enforce chirality condition so flows can be computed
-    return pcurvs, pdirs
+    return pcurvs, pdirs, normals
 
 def symbolic_pdirs(S, f, x, y, X, Y):
     R = CoordSys3D('R')
@@ -198,11 +199,12 @@ if __name__=='__main__':
     X, Y = np.meshgrid(xs, ys, indexing='xy')
     f_vals = f_num(X, Y)
     points = np.stack([X, Y, f_vals], 2).reshape(-1,3)
-    pcurvs, pdirs = numeric_pdirs(S, f, x, y, X, Y)
+    pcurvs, pdirs, normals = numeric_pdirs(S, f, x, y, X, Y)
     poly = pv.PolyData(points)
     surf = pv.StructuredGrid(Y, X, f_vals.T)
     
     eps = 1e-7
+    poly.point_data['normals'] = normals
     poly.point_data['d1'] = pdirs[:,:,0]
     poly.point_data['d2'] = pdirs[:,:,1]
     surf.point_data['d1'] = pdirs[:,:,0]
@@ -224,12 +226,14 @@ if __name__=='__main__':
     plotter.add_mesh(surf, scalars='gaussian_k')
 
     line = pv.Line()
+    # line=None
     synclastic_mask = (np.prod(pcurvs, -1) > 0)
+    if cfg['normals']['plot']:
+        normal_arrows = poly.glyph(orient='normals', scale=False, factor=0.04)
+        plotter.add_mesh(normal_arrows, color=cfg['normals']['color'])
     if cfg['principal_dirs']['plot']:
-        d1_arrows = make_glyphs(poly, mask=synclastic_mask,
-                                geom=line, scale=False, factor=0.04, orient='d1')
-        d2_arrows = make_glyphs(poly, mask=synclastic_mask,
-                                geom=line, scale=False, factor=0.04, orient='d2')
+        d1_arrows = poly.glyph(geom=line, scale=False, factor=0.04, orient='d1')
+        d2_arrows = poly.glyph(geom=line, scale=False, factor=0.04, orient='d2')
         plotter.add_mesh(d1_arrows, color=cfg['principal_dirs']['colors'][0], line_width=3)
         plotter.add_mesh(d2_arrows, color=cfg['principal_dirs']['colors'][1], line_width=3)
     if cfg['asymptotic_dirs']['plot']:
@@ -251,7 +255,7 @@ if __name__=='__main__':
     
     if cfg['asymptotic_dirs']['draw_curves']:
         source_mask = np.zeros(X.shape).astype(bool)
-        source_mask[::3,::3] = True
+        source_mask[::5,::5] = True
         source_mask = source_mask.ravel()
         source_pts = pv.PolyData(points[source_mask][~synclastic_mask[source_mask]])
         streamlines1 = surf.copy().streamlines_from_source(
@@ -271,7 +275,7 @@ if __name__=='__main__':
             integration_direction='both',
             surface_streamlines=True,
             initial_step_length=0.03,
-            step_unit='l',
+            step_unit='cl',
             compute_vorticity=False,
             interpolator_type='point',
             max_steps=2000

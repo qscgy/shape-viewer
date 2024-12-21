@@ -1,0 +1,20 @@
+---
+equation: 2 * sin(x) * sin(x*y)
+lims:
+  xmin: -2
+  xmax: 2
+  ymin: -2
+  ymax: 2
+  steps: 61
+normals:
+  plot: True
+  color: "green"
+principal_dirs:
+  plot: True
+  colors: ["black", "orange"]
+  draw_curves: False
+asymptotic_dirs:
+  plot: False
+  colors: ["red", "blue"]
+  draw_curves: True
+parabolic_curves: True

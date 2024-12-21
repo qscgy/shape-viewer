@@ -1,0 +1,21 @@
+# Monkey saddle
+---
+equation: x**3 - 3*x*y**2
+lims:
+  xmin: -1
+  xmax: 1
+  ymin: -1
+  ymax: 1
+  steps: 61
+normals:
+  plot: True
+  color: "green"
+principal_dirs:
+  plot: True
+  colors: ["black", "orange"]
+  draw_curves: False
+asymptotic_dirs:
+  plot: False
+  colors: ["red", "blue"]
+  draw_curves: True
+parabolic_curves: True
