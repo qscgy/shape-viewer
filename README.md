@@ -9,6 +9,10 @@ Present capabilities include:
 - plot principal directions, normals, and asymptotic directions and curves
 - fully configurable plot options
 
+### Example screenshots
+![Image 1](assets/ex1.png)
+![Image 2](assets/ex2.png)
+
 ## Installation
 In addition to Python 3.10 or later, Shape Viewer requiries these additional librariies:
 ```

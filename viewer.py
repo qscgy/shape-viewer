@@ -1,5 +1,6 @@
 import pyvista as pv
 import numpy as np
+import scipy.signal
 import sympy as sp
 from sympy.vector import CoordSys3D
 from sympy.vector.operators import gradient
@@ -185,6 +186,32 @@ def make_glyphs(data, mask=None, **kwargs):
     print(masked_data)
     return masked_data
 
+# def find_ridges(X, Y, zs, f_num, pdirs):
+#     pdirs = pdirs/np.sqrt((pdirs**2).sum(1, keepdims=True))
+#     pdirs = pdirs.reshape(zs.shape[0], zs.shape[1], 3, 2)
+#     ridges = np.zeros_like(zs).astype(bool)
+#     step = np.abs(X[0,0]-X[0,1])/2
+#     d1steps = pdirs[...,0] * step
+#     d2steps = pdirs[...,1] * step
+#     d1pos = f_num(X + d1steps[:,:,0], Y + d1steps[:,:,1])
+#     d1neg = f_num(X - d1steps[:,:,0], Y - d1steps[:,:,1])
+#     d2pos = f_num(X + d2steps[:,:,0], Y + d2steps[:,:,1])
+#     d2neg = f_num(X - d2steps[:,:,0], Y - d2steps[:,:,1])
+#     ridges[(np.sign((d1pos-zs)[...,2])==-np.sign((zs-d1neg)[...,2])) | 
+#            (np.sign((d2pos-zs)[...,2])==-np.sign((zs-d2neg)[...,2]))] = 1
+#     ridge_inds = np.where(ridges)
+#     ridge_pts = np.stack([X, Y, zs], 2)[ridge_inds[0], ridge_inds[1]]
+#     return ridge_pts
+
+def find_ridges(X, Y, zs, pcurvs):
+    pts = np.vstack([X, Y, zs], 2)
+    pcurvs = pcurvs.reshape(*X.shape, 2)
+    x_maxes = scipy.signal.argrelmax(pcurvs, axis=1)
+    x_mins = scipy.signal.argrelmin(pcurvs, axis=1)
+    y_maxes = scipy.signal.argrelmax(pcurvs, axis=0)
+    y_mins = scipy.signal.argrelmin(pcurvs, axis=0)
+    
+
 if __name__=='__main__':
     with open(sys.argv[1], 'r') as f:
         cfg = yaml.safe_load(f)
@@ -246,6 +273,9 @@ if __name__=='__main__':
 
     # TODO compute ridges
     # ridges are local extrema of principal curvatures when traveling in a principal direction
+    # ridge_pts = find_ridges(X, Y, f_vals, f_num, pdirs)
+    # ridge_poly = pv.PolyData(ridge_pts)
+    # plotter.add_mesh(ridge_poly, scalars=None)
     
     if cfg['parabolic_curves']:
         pos_parabolic = surf.contour([0.0], scalars='kg_over')
