@@ -1,5 +1,7 @@
 ---
-equation: 2 * sin(x) * sin(x*y)
+surface:
+  equation: 2 * sin(x) * sin(x*y)
+  scalars: "k1"
 lims:
   xmin: -2
   xmax: 2

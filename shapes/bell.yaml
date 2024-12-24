@@ -1,5 +1,7 @@
 ---
-equation: exp(-(x*x + y*y)/0.15) - (x*x/0.81 + y*y/1.1025)
+surface:
+  equation: exp(-(x*x + y*y)/0.15) - (x*x/0.81 + y*y/1.1025)
+  scalars: k2
 # equation: x**2 - y**3
 lims:
   xmin: -1

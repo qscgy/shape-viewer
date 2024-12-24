@@ -1,6 +1,8 @@
 # Monkey saddle
 ---
-equation: x**3 - 3*x*y**2
+surface:
+  equation: x**3 - 3*x*y**2
+  scalars: k1
 lims:
   xmin: -1
   xmax: 1
@@ -8,14 +10,14 @@ lims:
   ymax: 1
   steps: 41
 normals:
-  plot: True
+  plot: False
   color: "green"
 principal_dirs:
-  plot: False
+  plot: True
   colors: ["black", "orange"]
   draw_curves: False
 asymptotic_dirs:
-  plot: True
+  plot: False
   colors: ["red", "blue"]
   draw_curves: False
 parabolic_curves: True
