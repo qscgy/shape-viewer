@@ -1,22 +1,23 @@
 ---
 surface:
   equation: 1 - x*x - y*y - 2.5*exp(-(x*x/4 + y*y))
-  scalars: "k1"
-lims:
-  xmin: -2
-  xmax: 2
-  ymin: -2
-  ymax: 2
-  steps: 61
-normals:
-  plot: True
-  color: "green"
-principal_dirs:
-  plot: True
-  colors: ["black", "orange"]
-  draw_curves: False
-asymptotic_dirs:
-  plot: False
-  colors: ["red", "blue"]
-  draw_curves: True
-parabolic_curves: True
+#   scalars: "k1"
+# lims:
+#   xmin: -2
+#   xmax: 2
+#   ymin: -2
+#   ymax: 2
+#   steps: 61
+# normals:
+#   plot: True
+#   color: "green"
+# principal_dirs:
+#   plot: True
+#   colors: ["black", "orange"]
+#   draw_curves: False
+# asymptotic_dirs:
+#   plot: False
+#   colors: ["red", "blue"]
+#   draw_curves: True
+# parabolic_curves: True
+# ridges: True

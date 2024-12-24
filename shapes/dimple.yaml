@@ -20,3 +20,4 @@ asymptotic_dirs:
   colors: ["red", "blue"]
   draw_curves: False
 parabolic_curves: True
+ridges: False

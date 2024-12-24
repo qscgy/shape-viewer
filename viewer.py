@@ -13,6 +13,7 @@ import sys
 import scipy
 import scipy.ndimage.filters as filters
 import yaml
+from utils import _set_config_defaults
 
 sp.init_printing()
 pv.global_theme.allow_empty_mesh = True
@@ -193,44 +194,45 @@ def make_glyphs(data, mask=None, **kwargs):
     print(masked_data)
     return masked_data
 
-def find_ridges(X, Y, zs, pdirs, pcurvs):
+def find_ridges(X, Y, zs, pdirs, pcurvs, streamlines1, streamlines2):
     pdirs = pdirs/np.sqrt((pdirs**2).sum(1, keepdims=True))
     pdirs = pdirs.reshape(zs.shape[0], zs.shape[1], 3, 2)
     pcurvs = pcurvs.reshape(zs.shape[0], zs.shape[1], 2)
     ridges = np.zeros_like(zs).astype(bool)
     step = np.abs(X[0,0]-X[0,1])/4
-        
-    for k, dsteps in zip((pcurvs[:,:,0], pcurvs[:,:,1]), (pdirs[...,0] * step, pdirs[...,1] * step)):
+    ridge_pts = []
+    
+    for i in range(2):
+        k = pcurvs[...,i]
+        dsteps = pdirs[...,i] * step
+        if i==0:
+            streamline = streamlines1
+        else:
+            streamline = streamlines2
         interp = scipy.interpolate.RegularGridInterpolator((Y[:,0], X[0]),
                                                         values=k,
                                                         method='linear',
                                                         fill_value=None,
                                                         bounds_error=False)
         XY = np.stack([X, Y], 2)
+        # for j in range(streamline.n_cells):
+        #     line_pts = streamline.get_cell(j).points
+        #     k_vals = interp(np.fliplr(line_pts[:,:2]))
+        #     ext_idx, _ = scipy.signal.find_peaks(k_vals)
+        #     ridge_pts.append(line_pts[ext_idx])
+    
         d1pos = interp(np.flip(XY + dsteps[...,:2], axis=2))
         d1neg = interp(np.flip(XY - dsteps[...,:2], axis=2))
         ridges[np.sign(k-d1pos) * np.sign(k-d1neg) == 1] = 1
     ridge_inds = np.where(ridges)
     ridge_pts = np.stack([X, Y, zs], 2)[ridge_inds[0], ridge_inds[1]].reshape(-1, 3)
-    return ridge_pts
-
-def _find_ridges(X, Y, zs, pdirs, pcurvs):
-    pdirs = pdirs/np.sqrt((pdirs**2).sum(1, keepdims=True))
-    pdirs = pdirs.reshape(zs.shape[0], zs.shape[1], 3, 2)
-    pcurvs = pcurvs.reshape(zs.shape[0], zs.shape[1], 2)
-    ridges = np.zeros_like(zs).astype(bool)
-    for k in np.moveaxis(pcurvs, -1, 0):
-        dmin = scipy.signal.argrelmin(k, axis=1)
-        dmax = scipy.signal.argrelmax(k, axis=1)
-        ridges[dmin[0], dmin[1]] = 1
-        ridges[dmax[0], dmax[1]] = 1
-    ridge_inds = np.where(ridges)
-    ridge_pts = np.stack([X, Y, zs], 2)[ridge_inds[0], ridge_inds[1]].reshape(-1, 3)
+    # ridge_pts = np.vstack(ridge_pts)
     return ridge_pts
         
 if __name__ == "__main__":
     with open(sys.argv[1], "r") as f:
         cfg = yaml.safe_load(f)
+    _set_config_defaults(cfg)
     x, y = sp.symbols("x y")
     f_input = cfg["surface"]["equation"].strip()
     f = sp.parse_expr(f_input)
@@ -305,12 +307,6 @@ if __name__ == "__main__":
         plotter.add_mesh(
             a2_arrows, color=cfg["asymptotic_dirs"]["colors"][1], line_width=3
         )
-
-    # TODO compute ridges
-    # ridges are local extrema of principal curvatures when traveling in a principal direction
-    ridge_pts = find_ridges(X, Y, f_vals, pdirs, pcurvs)
-    ridge_poly = pv.PolyData(ridge_pts)
-    plotter.add_mesh(ridge_poly, scalars=None, point_size=15)
 
     if cfg["parabolic_curves"]:
         pos_parabolic = surf.contour([0.0], scalars="kg_over")
@@ -389,5 +385,10 @@ if __name__ == "__main__":
             streamlines2.tube(radius=(xmax - xmin) / (len(xs) * 15)),
             color=cfg["asymptotic_dirs"]["colors"][1],
         )
+    if cfg['ridges']:
+        # ridges are local extrema of principal curvatures when traveling in a principal direction
+        ridge_pts = find_ridges(X, Y, f_vals, pdirs, pcurvs, streamlines1, streamlines2)
+        ridge_poly = pv.PolyData(ridge_pts)
+        plotter.add_mesh(ridge_poly, scalars=None, point_size=15)
 
     plotter.show()
