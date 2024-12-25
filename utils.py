@@ -8,6 +8,7 @@ DEFAULT = {
                        'xmax':1,
                        'ymax':1,
                        'steps': 61},
+    'gaussmap': False,
     'normals': {'plot': False,
                           'color': 'green'},
     'principal_dirs': {'plot': False,
@@ -17,14 +18,9 @@ DEFAULT = {
                         'colors': ['red', 'blue'],
                         'draw_curves': False},
     'parabolic_curves': False,
-    'ridges': False
+    'ridges': False,
+    'flecnodes': False
 }
-
-def _set_key_if_not_exist(cfg, key, default):
-    if key in cfg:
-        pass
-    else:
-        cfg[key] = default
 
 def _set_config_defaults(cfg, default=DEFAULT):
     for dk in default:

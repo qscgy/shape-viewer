@@ -7,13 +7,12 @@ from sympy.vector import CoordSys3D
 from sympy.vector.operators import gradient
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
-import inspect
-import numbers
 import sys
 import scipy
 import scipy.ndimage.filters as filters
 import yaml
 from utils import _set_config_defaults
+import einops as eo
 
 sp.init_printing()
 pv.global_theme.allow_empty_mesh = True
@@ -90,10 +89,6 @@ def numeric_adirs(kappas, pdirs):
     hyper_kappas = np.ma.array(kappas, mask=~hyperbolic_mask)
     thetas = np.arctan(np.sqrt(np.abs(hyper_kappas[:, 0] / (1e-6 + hyper_kappas[:, 1]))))
     thetas = np.vstack([thetas, -thetas]).T
-    # thetas = np.vstack([
-    #     np.minimum(thetas, np.pi - thetas),
-    #     np.maximum(thetas, np.pi - thetas)
-    # ]).T
     thetas[~hyperbolic_mask] = np.nan
     components = np.stack([np.cos(thetas), np.sin(thetas)], 1)
     adirs = np.matmul(pdirs, components.data)
@@ -194,41 +189,54 @@ def make_glyphs(data, mask=None, **kwargs):
     print(masked_data)
     return masked_data
 
-def find_ridges(X, Y, zs, pdirs, pcurvs, streamlines1, streamlines2):
+def find_ridges(X, Y, zs, pdirs, pcurvs):
     pdirs = pdirs/np.sqrt((pdirs**2).sum(1, keepdims=True))
     pdirs = pdirs.reshape(zs.shape[0], zs.shape[1], 3, 2)
     pcurvs = pcurvs.reshape(zs.shape[0], zs.shape[1], 2)
-    ridges = np.zeros_like(zs).astype(bool)
-    step = np.abs(X[0,0]-X[0,1])/4
+    ridges = np.zeros((2, zs.shape[0], zs.shape[1]), dtype=bool)
+    step = np.abs(X[0,0]-X[0,1])
     ridge_pts = []
     
     for i in range(2):
         k = pcurvs[...,i]
         dsteps = pdirs[...,i] * step
-        if i==0:
-            streamline = streamlines1
-        else:
-            streamline = streamlines2
         interp = scipy.interpolate.RegularGridInterpolator((Y[:,0], X[0]),
                                                         values=k,
                                                         method='linear',
                                                         fill_value=None,
                                                         bounds_error=False)
         XY = np.stack([X, Y], 2)
-        # for j in range(streamline.n_cells):
-        #     line_pts = streamline.get_cell(j).points
-        #     k_vals = interp(np.fliplr(line_pts[:,:2]))
-        #     ext_idx, _ = scipy.signal.find_peaks(k_vals)
-        #     ridge_pts.append(line_pts[ext_idx])
-    
         d1pos = interp(np.flip(XY + dsteps[...,:2], axis=2))
         d1neg = interp(np.flip(XY - dsteps[...,:2], axis=2))
-        ridges[np.sign(k-d1pos) * np.sign(k-d1neg) == 1] = 1
-    ridge_inds = np.where(ridges)
-    ridge_pts = np.stack([X, Y, zs], 2)[ridge_inds[0], ridge_inds[1]].reshape(-1, 3)
-    # ridge_pts = np.vstack(ridge_pts)
+        ridges[i][np.sign(k-d1pos) * np.sign(k-d1neg) == 1] = 1
+        ridge_inds = np.where(ridges[i])
+        ridge_pts.append(np.stack([X, Y, zs], 2)[ridge_inds[0], ridge_inds[1]])
     return ridge_pts
-        
+
+def find_flecnodes(zs, pdirs, pcurvs, streamlines1, streamlines2):
+    pdirs = pdirs/np.sqrt((pdirs**2).sum(1, keepdims=True))
+    pdirs = pdirs.reshape(zs.shape[0], zs.shape[1], 3, 2)
+    pcurvs = pcurvs.reshape(zs.shape[0], zs.shape[1], 2)
+    flecnodes = []
+    
+    for i in range(2):
+        k = pcurvs[...,i]
+        if i==0:
+            streamline = streamlines1
+        else:
+            streamline = streamlines2
+
+        for j in range(streamline.n_cells):
+            line_pts = streamline.get_cell(j).points
+            tangents = np.diff(line_pts, axis=1)
+            tangents = tangents/np.sqrt((tangents**2).sum(1, keepdims=True))
+            angles = 1 - (tangents[1:]*tangents[:-1]).sum(1)
+            ext_idx = np.where(np.diff(np.sign(angles)))[0] + 2
+            flecnodes.append(line_pts[ext_idx])
+    flecnodes = np.vstack(flecnodes)
+    print(flecnodes)
+    return flecnodes
+
 if __name__ == "__main__":
     with open(sys.argv[1], "r") as f:
         cfg = yaml.safe_load(f)
@@ -250,13 +258,15 @@ if __name__ == "__main__":
     )
     X, Y = np.meshgrid(xs, ys, indexing="xy")
     f_vals = f_num(X, Y)
-    points = np.stack([X, Y, f_vals], 2).reshape(-1, 3)
     pcurvs, pdirs, normals = numeric_pdirs(S, f, x, y, X, Y)
+    points = np.stack([X, Y, f_vals], 2).reshape(-1, 3)
+    # points = np.stack([X, Y, pcurvs[:,0].reshape(X.shape)], 2).reshape(-1, 3)
     poly = pv.PolyData(points)
     surf = pv.StructuredGrid(Y, X, f_vals.T)
+    # surf = pv.StructuredGrid(Y, X, (pcurvs[:,0].reshape(X.shape)).T)
 
     eps = 1e-7
-    poly.point_data["normals"] = normals
+    poly.point_data["normals"] = normals/np.sqrt((normals**2).sum(1, keepdims=True))
     poly.point_data["d1"] = pdirs[:, :, 0]
     poly.point_data["d2"] = pdirs[:, :, 1]
     surf.point_data["d1"] = pdirs[:, :, 0]
@@ -268,16 +278,34 @@ if __name__ == "__main__":
     surf.point_data["mean_k"] = 0.5 * np.sum(pcurvs, 1)
     surf.point_data["k1"] = pcurvs[:,0]
     surf.point_data["k2"] = pcurvs[:,1]
+    
+    k1 = np.max(pcurvs, axis=1)
+    k2 = np.min(pcurvs, axis=1)
+    surf.point_data['shape_index'] = 2/np.pi * np.arctan((k2+k1)/(k2-k1))
 
     adirs = numeric_adirs(pcurvs, pdirs)
     poly.point_data["a1"] = adirs[:, :, 0]
     poly.point_data["a2"] = adirs[:, :, 1]
     surf.point_data["a1"] = adirs[:, :, 0]
     surf.point_data["a2"] = adirs[:, :, 1]
+    
+    if cfg['gaussmap']:
+        gaussmap = pv.Plotter()
+        gauss_poly = pv.PolyData(poly['normals'])
+        gauss_poly['clasticity'] = surf.point_data['clasticity']
+        gaussmap.add_axes()
+        gaussmap.add_mesh(
+            gauss_poly,
+            point_size=10,
+            scalars='clasticity'
+        )
+        gaussmap.show()
 
     plotter = pv.Plotter()
     plotter.add_axes()
     plotter.add_mesh(surf, scalars=cfg["surface"]["scalars"], cmap='jet')
+    # plotter.add_mesh(pv.StructuredGrid(Y, X, pcurvs[:,0].reshape(X.shape).T))
+
 
     # line = pv.Line().tube(radius=0.03)
     line=None
@@ -349,6 +377,14 @@ if __name__ == "__main__":
             streamlines2.tube(radius=(xmax - xmin) / (len(xs) * 10)),
             color=cfg["principal_dirs"]["colors"][1],
         )
+        
+    if cfg['ridges']:
+        # ridges are local extrema of principal curvatures when traveling in a principal direction
+        ridge_pts1, ridge_pts2 = find_ridges(X, Y, f_vals, pdirs, pcurvs)
+        ridge_poly1 = pv.PolyData(ridge_pts1)
+        plotter.add_mesh(ridge_poly1, point_size=15, color=cfg['principal_dirs']['colors'][0])
+        ridge_poly2 = pv.PolyData(ridge_pts2)
+        plotter.add_mesh(ridge_poly2, point_size=15, color=cfg['principal_dirs']['colors'][1])
     
     if cfg["asymptotic_dirs"]["draw_curves"]:
         source_mask = np.zeros(X.shape).astype(bool)
@@ -378,17 +414,17 @@ if __name__ == "__main__":
             max_steps=2000,
         )
         plotter.add_mesh(
-            streamlines1.tube(radius=(xmax - xmin) / (len(xs) * 15)),
+            streamlines1.tube(radius=(xmax - xmin) / (len(xs) * 10)),
             color=cfg["asymptotic_dirs"]["colors"][0],
         )
         plotter.add_mesh(
-            streamlines2.tube(radius=(xmax - xmin) / (len(xs) * 15)),
+            streamlines2.tube(radius=(xmax - xmin) / (len(xs) * 10)),
             color=cfg["asymptotic_dirs"]["colors"][1],
         )
-    if cfg['ridges']:
-        # ridges are local extrema of principal curvatures when traveling in a principal direction
-        ridge_pts = find_ridges(X, Y, f_vals, pdirs, pcurvs, streamlines1, streamlines2)
-        ridge_poly = pv.PolyData(ridge_pts)
-        plotter.add_mesh(ridge_poly, scalars=None, point_size=15)
+    
+        if cfg['flecnodes']:
+            flecnodes = find_flecnodes(f_vals, pdirs, pcurvs, streamlines1, streamlines2)
+            flec_pts = pv.PolyData(flecnodes)
+            plotter.add_mesh(flec_pts, scalars=None, point_size=15, color='red')
 
-    plotter.show()
+    plotter.show()    
