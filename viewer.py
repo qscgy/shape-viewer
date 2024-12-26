@@ -213,6 +213,14 @@ def find_ridges(X, Y, zs, pdirs, pcurvs):
         ridge_pts.append(np.stack([X, Y, zs], 2)[ridge_inds[0], ridge_inds[1]])
     return ridge_pts
 
+def asym_map(adirs):
+    asymp_mask = ~np.isnan(adirs[:,0,0])
+    adirs = adirs[asymp_mask] / np.linalg.norm(adirs[asymp_mask], axis=1, keepdims=True)
+    adirs_double = np.vstack([adirs, -adirs])
+    map1 = pv.PolyData(adirs_double[:,:,0])
+    map2 = pv.PolyData(adirs_double[:,:,1])
+    return map1, map2
+
 def find_flecnodes(zs, pdirs, pcurvs, streamlines1, streamlines2):
     pdirs = pdirs/np.sqrt((pdirs**2).sum(1, keepdims=True))
     pdirs = pdirs.reshape(zs.shape[0], zs.shape[1], 3, 2)
@@ -292,139 +300,148 @@ if __name__ == "__main__":
     if cfg['gaussmap']:
         gaussmap = pv.Plotter()
         gauss_poly = pv.PolyData(poly['normals'])
-        gauss_poly['clasticity'] = surf.point_data['clasticity']
+        gauss_poly['shape_index'] = surf.point_data['shape_index']
         gaussmap.add_axes()
         gaussmap.add_mesh(
             gauss_poly,
             point_size=10,
-            scalars='clasticity'
+            scalars='shape_index'
         )
         gaussmap.show()
+    
+    if cfg['asymptotic_spherical_map']:
+        asmap1, asmap2 = asym_map(adirs)
+        asplot = pv.Plotter()
+        asplot.add_axes()
+        asplot.add_mesh(asmap1, color=cfg['asymptotic_dirs']['colors'][0])
+        asplot.add_mesh(asmap2, color=cfg['asymptotic_dirs']['colors'][1])
+        asplot.show()
+    
+    if cfg['surface']['plot']:
+        plotter = pv.Plotter()
+        plotter.add_axes()
+        plotter.add_mesh(surf, scalars=cfg["surface"]["scalars"], cmap='jet')
+        # plotter.add_mesh(pv.StructuredGrid(Y, X, pcurvs[:,0].reshape(X.shape).T))
 
-    plotter = pv.Plotter()
-    plotter.add_axes()
-    plotter.add_mesh(surf, scalars=cfg["surface"]["scalars"], cmap='jet')
-    # plotter.add_mesh(pv.StructuredGrid(Y, X, pcurvs[:,0].reshape(X.shape).T))
 
+        # line = pv.Line().tube(radius=0.03)
+        line=None
+        synclastic_mask = np.prod(pcurvs, -1) > 0
+        if cfg["normals"]["plot"]:
+            normal_arrows = poly.glyph(orient="normals", scale=False, factor=0.04)
+            plotter.add_mesh(normal_arrows, color=cfg["normals"]["color"])
+        if cfg["principal_dirs"]["plot"]:
+            d1_arrows = poly.glyph(geom=line, scale=False, factor=0.04, orient="d1")
+            d2_arrows = poly.glyph(geom=line, scale=False, factor=0.04, orient="d2")
+            plotter.add_mesh(
+                d1_arrows, color=cfg["principal_dirs"]["colors"][0], line_width=3
+            )
+            plotter.add_mesh(
+                d2_arrows, color=cfg["principal_dirs"]["colors"][1], line_width=3
+            )
+        if cfg["asymptotic_dirs"]["plot"]:
+            a1_arrows = make_glyphs(
+                poly, mask=synclastic_mask, geom=line, scale=False, factor=0.04, orient="a1"
+            )
+            a2_arrows = make_glyphs(
+                poly, mask=synclastic_mask, geom=line, scale=False, factor=0.04, orient="a2"
+            )
+            plotter.add_mesh(
+                a1_arrows, color=cfg["asymptotic_dirs"]["colors"][0], line_width=3
+            )
+            plotter.add_mesh(
+                a2_arrows, color=cfg["asymptotic_dirs"]["colors"][1], line_width=3
+            )
 
-    # line = pv.Line().tube(radius=0.03)
-    line=None
-    synclastic_mask = np.prod(pcurvs, -1) > 0
-    if cfg["normals"]["plot"]:
-        normal_arrows = poly.glyph(orient="normals", scale=False, factor=0.04)
-        plotter.add_mesh(normal_arrows, color=cfg["normals"]["color"])
-    if cfg["principal_dirs"]["plot"]:
-        d1_arrows = poly.glyph(geom=line, scale=False, factor=0.04, orient="d1")
-        d2_arrows = poly.glyph(geom=line, scale=False, factor=0.04, orient="d2")
-        plotter.add_mesh(
-            d1_arrows, color=cfg["principal_dirs"]["colors"][0], line_width=3
-        )
-        plotter.add_mesh(
-            d2_arrows, color=cfg["principal_dirs"]["colors"][1], line_width=3
-        )
-    if cfg["asymptotic_dirs"]["plot"]:
-        a1_arrows = make_glyphs(
-            poly, mask=synclastic_mask, geom=line, scale=False, factor=0.04, orient="a1"
-        )
-        a2_arrows = make_glyphs(
-            poly, mask=synclastic_mask, geom=line, scale=False, factor=0.04, orient="a2"
-        )
-        plotter.add_mesh(
-            a1_arrows, color=cfg["asymptotic_dirs"]["colors"][0], line_width=3
-        )
-        plotter.add_mesh(
-            a2_arrows, color=cfg["asymptotic_dirs"]["colors"][1], line_width=3
-        )
+        if cfg["parabolic_curves"]:
+            pos_parabolic = surf.contour([0.0], scalars="kg_over")
+            neg_parabolic = surf.contour([0.0], scalars="kg_under")
+            parabolic = pos_parabolic.merge(neg_parabolic)
+            plotter.add_mesh(parabolic, color="white", line_width=5)
 
-    if cfg["parabolic_curves"]:
-        pos_parabolic = surf.contour([0.0], scalars="kg_over")
-        neg_parabolic = surf.contour([0.0], scalars="kg_under")
-        parabolic = pos_parabolic.merge(neg_parabolic)
-        plotter.add_mesh(parabolic, color="white", line_width=5)
-
-    if cfg["principal_dirs"]["draw_curves"]:
-        source_mask = np.zeros(X.shape).astype(bool)
-        source_mask[::7, ::7] = True
-        source_mask = source_mask.ravel()
-        source_pts = pv.PolyData(points[source_mask])
-        streamlines1 = surf.copy().streamlines_from_source(
-            source_pts,
-            vectors="d1",
-            integration_direction="both",
-            surface_streamlines=True,
-            initial_step_length=0.1,
-            step_unit="cl",
-            compute_vorticity=False,
-            interpolator_type="point",
-            max_steps=3000,
-        )
-        streamlines2 = surf.copy().streamlines_from_source(
-            source_pts,
-            vectors="d2",
-            integration_direction="both",
-            surface_streamlines=True,
-            initial_step_length=0.1,
-            step_unit="cl",
-            compute_vorticity=False,
-            interpolator_type="point",
-            max_steps=3000,
-        )
-        plotter.add_mesh(
-            streamlines1.tube(radius=(xmax - xmin) / (len(xs) * 10)),
-            color=cfg["principal_dirs"]["colors"][0],
-        )
-        plotter.add_mesh(
-            streamlines2.tube(radius=(xmax - xmin) / (len(xs) * 10)),
-            color=cfg["principal_dirs"]["colors"][1],
-        )
+        if cfg["principal_dirs"]["draw_curves"]:
+            source_mask = np.zeros(X.shape).astype(bool)
+            source_mask[::7, ::7] = True
+            source_mask = source_mask.ravel()
+            source_pts = pv.PolyData(points[source_mask])
+            streamlines1 = surf.copy().streamlines_from_source(
+                source_pts,
+                vectors="d1",
+                integration_direction="both",
+                surface_streamlines=True,
+                initial_step_length=0.1,
+                step_unit="cl",
+                compute_vorticity=False,
+                interpolator_type="point",
+                max_steps=3000,
+            )
+            streamlines2 = surf.copy().streamlines_from_source(
+                source_pts,
+                vectors="d2",
+                integration_direction="both",
+                surface_streamlines=True,
+                initial_step_length=0.1,
+                step_unit="cl",
+                compute_vorticity=False,
+                interpolator_type="point",
+                max_steps=3000,
+            )
+            plotter.add_mesh(
+                streamlines1.tube(radius=(xmax - xmin) / (len(xs) * 10)),
+                color=cfg["principal_dirs"]["colors"][0],
+            )
+            plotter.add_mesh(
+                streamlines2.tube(radius=(xmax - xmin) / (len(xs) * 10)),
+                color=cfg["principal_dirs"]["colors"][1],
+            )
+            
+        if cfg['ridges']:
+            # ridges are local extrema of principal curvatures when traveling in a principal direction
+            ridge_pts1, ridge_pts2 = find_ridges(X, Y, f_vals, pdirs, pcurvs)
+            ridge_poly1 = pv.PolyData(ridge_pts1)
+            plotter.add_mesh(ridge_poly1, point_size=15, color=cfg['principal_dirs']['colors'][0])
+            ridge_poly2 = pv.PolyData(ridge_pts2)
+            plotter.add_mesh(ridge_poly2, point_size=15, color=cfg['principal_dirs']['colors'][1])
         
-    if cfg['ridges']:
-        # ridges are local extrema of principal curvatures when traveling in a principal direction
-        ridge_pts1, ridge_pts2 = find_ridges(X, Y, f_vals, pdirs, pcurvs)
-        ridge_poly1 = pv.PolyData(ridge_pts1)
-        plotter.add_mesh(ridge_poly1, point_size=15, color=cfg['principal_dirs']['colors'][0])
-        ridge_poly2 = pv.PolyData(ridge_pts2)
-        plotter.add_mesh(ridge_poly2, point_size=15, color=cfg['principal_dirs']['colors'][1])
-    
-    if cfg["asymptotic_dirs"]["draw_curves"]:
-        source_mask = np.zeros(X.shape).astype(bool)
-        source_mask[::3, ::3] = True
-        source_mask = source_mask.ravel()
-        source_pts = pv.PolyData(points[source_mask][~synclastic_mask[source_mask]])
-        streamlines1 = surf.copy().streamlines_from_source(
-            source_pts,
-            vectors="a1",
-            integration_direction="both",
-            surface_streamlines=True,
-            initial_step_length=0.03,
-            step_unit="cl",
-            compute_vorticity=False,
-            interpolator_type="point",
-            max_steps=2000,
-        )
-        streamlines2 = surf.copy().streamlines_from_source(
-            source_pts,
-            vectors="a2",
-            integration_direction="both",
-            surface_streamlines=True,
-            initial_step_length=0.03,
-            step_unit="cl",
-            compute_vorticity=False,
-            interpolator_type="point",
-            max_steps=2000,
-        )
-        plotter.add_mesh(
-            streamlines1.tube(radius=(xmax - xmin) / (len(xs) * 10)),
-            color=cfg["asymptotic_dirs"]["colors"][0],
-        )
-        plotter.add_mesh(
-            streamlines2.tube(radius=(xmax - xmin) / (len(xs) * 10)),
-            color=cfg["asymptotic_dirs"]["colors"][1],
-        )
-    
-        if cfg['flecnodes']:
-            flecnodes = find_flecnodes(f_vals, pdirs, pcurvs, streamlines1, streamlines2)
-            flec_pts = pv.PolyData(flecnodes)
-            plotter.add_mesh(flec_pts, scalars=None, point_size=15, color='red')
+        if cfg["asymptotic_dirs"]["draw_curves"]:
+            source_mask = np.zeros(X.shape).astype(bool)
+            source_mask[::3, ::3] = True
+            source_mask = source_mask.ravel()
+            source_pts = pv.PolyData(points[source_mask][~synclastic_mask[source_mask]])
+            streamlines1 = surf.copy().streamlines_from_source(
+                source_pts,
+                vectors="a1",
+                integration_direction="both",
+                surface_streamlines=True,
+                initial_step_length=0.03,
+                step_unit="cl",
+                compute_vorticity=False,
+                interpolator_type="point",
+                max_steps=2000,
+            )
+            streamlines2 = surf.copy().streamlines_from_source(
+                source_pts,
+                vectors="a2",
+                integration_direction="both",
+                surface_streamlines=True,
+                initial_step_length=0.03,
+                step_unit="cl",
+                compute_vorticity=False,
+                interpolator_type="point",
+                max_steps=2000,
+            )
+            plotter.add_mesh(
+                streamlines1.tube(radius=(xmax - xmin) / (len(xs) * 10)),
+                color=cfg["asymptotic_dirs"]["colors"][0],
+            )
+            plotter.add_mesh(
+                streamlines2.tube(radius=(xmax - xmin) / (len(xs) * 10)),
+                color=cfg["asymptotic_dirs"]["colors"][1],
+            )
+        
+            if cfg['flecnodes']:
+                flecnodes = find_flecnodes(f_vals, pdirs, pcurvs, streamlines1, streamlines2)
+                flec_pts = pv.PolyData(flecnodes)
+                plotter.add_mesh(flec_pts, scalars=None, point_size=15, color='red')
 
-    plotter.show()    
+        plotter.show()    

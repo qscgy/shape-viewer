@@ -1,14 +1,23 @@
 ---
+# Surface
 surface:
   equation: 1 - x*x - y*y - 2.5*exp(-(x*x/4 + y*y))
-  scalars: "k1"
+  scalars: "shape_index"
+  plot: True
+
+# Plot properties
 lims:
   xmin: -2
   xmax: 2
   ymin: -2
   ymax: 2
-  steps: 171
-gaussmap: False
+  steps: 71
+
+# Maps to display before the main surface plot
+gaussmap: True
+asymptotic_spherical_map: True
+
+# Elements to plot on the surface 
 normals:
   plot: False
   color: "green"
@@ -19,7 +28,7 @@ principal_dirs:
 asymptotic_dirs:
   plot: False
   colors: ["red", "blue"]
-  draw_curves: False
+  draw_curves: True
 parabolic_curves: True
-ridges: True
+ridges: False
 flecnodes: False
