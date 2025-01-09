@@ -2,22 +2,23 @@
 ---
 surface:
   equation: x**3 - 3*x*y**2
-  scalars: k1
+  scalars: gaussian_k
 lims:
   xmin: -1
   xmax: 1
   ymin: -1
   ymax: 1
-  steps: 41
+  steps: 91
 normals:
   plot: False
   color: "green"
 principal_dirs:
-  plot: True
+  plot: False
   colors: ["black", "orange"]
   draw_curves: False
 asymptotic_dirs:
   plot: False
   colors: ["red", "blue"]
-  draw_curves: False
-parabolic_curves: True
+  draw_curves: True
+parabolic_curves: False
+asymptotic_spherical_map: True

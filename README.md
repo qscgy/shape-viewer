@@ -37,28 +37,40 @@ A typical config file looks like this:
 ```
 # Monkey saddle
 ---
-equation: x**3 - 3*x*y**2
+surface:
+  equation: x**3 - 3*x*y**2
+  scalars: gaussian_k
 lims:
   xmin: -1
   xmax: 1
   ymin: -1
   ymax: 1
-  steps: 61
+  steps: 91
 normals:
-  plot: True
+  plot: False
   color: "green"
 principal_dirs:
-  plot: True
+  plot: False
   colors: ["black", "orange"]
   draw_curves: False
 asymptotic_dirs:
   plot: False
   colors: ["red", "blue"]
   draw_curves: True
-parabolic_curves: True
+parabolic_curves: False
+asymptotic_spherical_map: True
+gaussmap: False
 ```
-- `equation` is any sympy-parseable expression string, assumed to represent $f(x,y)$ in an equation for a surface of the form $z=f(x,y)$.
+- `surface` describes the surface to plot.
+  - `equation` is any sympy-parseable expression string, assumed to represent $f(x,y)$ in an equation for a surface of the form $z=f(x,y)$.
+  - `scalars` describes which pointwise scalar value will be used to color the surface. Current options are `gaussian_k` for Gaussian curvature, `mean_k` for mean curvature, `k1` and `k2` for principal curvatures, and `shape_index` for shape index.
 - `lims` controls the limits of the plotted surface.
-- `normals` controls whether normals are plotted.
-- `principal_dirs` and `asymptotic_dirs` control the plotting of principal and asymptotic directions at points, and whether curves are plotted by integrating the fields of principal and asymptotic directions.
+- `normals` controls plotting of normals.
+  - `plot` controls whether normals are plotted (as arrows).
+  - if `plot` is True, `color` sets the color of the arrows. 
+- `principal_dirs` and `asymptotic_dirs` control the plotting of principal and asymptotic directions at points.
+  - `plot` controls whether the directions are plotted as arrows. Default is `False`.
+  - `draw_curves` controls whether curves are plotted by integrating the fields of principal and asymptotic directions. It is not mutually exclusive with `plot`. Default is `False`.
+  - `colors` is list of two colors, controlling the color of the arrows or curves draw. Default is `["black", "orange"]` for `principal_dirs` and `["red", "blue"]` for `asymptotic_dirs`.
 - `parabolic_curves` controls whether parabolic curves are drawn on the surface.
+- `asymptotic_spherical_map` and `gaussmap` control whether the corresponding map is plotted. It will be drawn in a separate window before the surface plot.

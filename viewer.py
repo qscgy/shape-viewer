@@ -17,6 +17,24 @@ import einops as eo
 sp.init_printing()
 pv.global_theme.allow_empty_mesh = True
 
+def _remove_from_grid(grid: pv.StructuredGrid, mask: np.ndarray):
+    h, w, _ = grid.dimensions
+    inds = np.arange(h * w).astype(float)
+    inds[mask] = np.nan     # make masked inds nan to check later
+    inds = inds.reshape(h, w)
+    four = np.ones((h-1, w-1)) * 4
+    cells = np.stack([
+        four,
+        inds[:-1,:-1],
+        inds[1:,:-1],
+        inds[1:,1:],
+        inds[:-1,1:]
+    ], 2).reshape(-1, 5)
+    cell_mask = np.any(np.isnan(cells), axis=1)
+    poly = pv.PolyData(grid.points, cells[~cell_mask].astype(int))
+    for k, v in grid.point_data.items():
+        poly.point_data[k] = v
+    return poly
 
 def shape_operator(f, x, y, R):
     fx = R.i + R.k * sp.diff(f, x)
@@ -213,13 +231,28 @@ def find_ridges(X, Y, zs, pdirs, pcurvs):
         ridge_pts.append(np.stack([X, Y, zs], 2)[ridge_inds[0], ridge_inds[1]])
     return ridge_pts
 
-def asym_map(adirs):
+def asym_map(adirs, poly: pv.StructuredGrid = None):
     asymp_mask = ~np.isnan(adirs[:,0,0])
     adirs = adirs[asymp_mask] / np.linalg.norm(adirs[asymp_mask], axis=1, keepdims=True)
     adirs_double = np.vstack([adirs, -adirs])
-    map1 = pv.PolyData(adirs_double[:,:,0])
-    map2 = pv.PolyData(adirs_double[:,:,1])
-    return map1, map2
+    if poly is None:
+        map1 = pv.PolyData(adirs_double[:,:,0])
+        map2 = pv.PolyData(adirs_double[:,:,1])
+        return map1, map2
+    else:
+        poly1 = poly.copy()
+        poly2 = poly.copy()
+        poly1.points[asymp_mask] = adirs[:,:,0]
+        poly2.points[asymp_mask] = adirs[:,:,1]
+        poly1 = _remove_from_grid(poly1, ~asymp_mask)
+        poly2 = _remove_from_grid(poly2, ~asymp_mask)
+        poly1_ = poly1.copy()
+        poly2_ = poly2.copy()
+        poly1_.points = -poly1.points
+        poly2_.points = -poly2.points
+        poly1 = poly1.merge(poly1_)
+        poly2 = poly2.merge(poly2_)
+        return poly1, poly2
 
 def find_flecnodes(zs, pdirs, pcurvs, streamlines1, streamlines2):
     pdirs = pdirs/np.sqrt((pdirs**2).sum(1, keepdims=True))
@@ -310,17 +343,24 @@ if __name__ == "__main__":
         gaussmap.show()
     
     if cfg['asymptotic_spherical_map']:
-        asmap1, asmap2 = asym_map(adirs)
+        asmap1, asmap2 = asym_map(adirs, poly=surf)
         asplot = pv.Plotter()
         asplot.add_axes()
-        asplot.add_mesh(asmap1, color=cfg['asymptotic_dirs']['colors'][0])
-        asplot.add_mesh(asmap2, color=cfg['asymptotic_dirs']['colors'][1])
+        # asplot.add_mesh(asmap1, color=cfg['asymptotic_dirs']['colors'][0])
+        # asplot.add_mesh(asmap2, color=cfg['asymptotic_dirs']['colors'][1])
+        asplot.add_mesh(asmap1)
+        asplot.add_mesh(asmap2)
         asplot.show()
     
     if cfg['surface']['plot']:
         plotter = pv.Plotter()
         plotter.add_axes()
-        plotter.add_mesh(surf, scalars=cfg["surface"]["scalars"], cmap='jet')
+        if cfg["surface"]["scalars"]=='shape_index':
+            clims = [-1, 1]
+        else:
+            clims = None
+            
+        plotter.add_mesh(surf, scalars=cfg["surface"]["scalars"], cmap='jet', clim=clims)
         # plotter.add_mesh(pv.StructuredGrid(Y, X, pcurvs[:,0].reshape(X.shape).T))
 
 
@@ -444,4 +484,4 @@ if __name__ == "__main__":
                 flec_pts = pv.PolyData(flecnodes)
                 plotter.add_mesh(flec_pts, scalars=None, point_size=15, color='red')
 
-        plotter.show()    
+        plotter.show()
