@@ -20,8 +20,9 @@ numpy
 scipy
 matplotlib
 pyvista
-yaml
+pyyaml
 sympy
+einops
 ```
 All can be installed using `pip`.
 
