@@ -53,12 +53,10 @@ def shape_operator(f, x, y, R):
     S = I_inv * II
     return S, I, II
 
-
 def eval_on_grid(f, xs, ys):
     X, Y = np.meshgrid(xs, ys, indexing="xy")
     f_flat = f(X.ravel(), Y.ravel())
     return f_flat.reshape(X.shape)
-
 
 def _shape_operator(f, x, y):
     fx = sp.diff(f, x)
@@ -278,10 +276,7 @@ def find_flecnodes(zs, pdirs, pcurvs, streamlines1, streamlines2):
     print(flecnodes)
     return flecnodes
 
-if __name__ == "__main__":
-    with open(sys.argv[1], "r") as f:
-        cfg = yaml.safe_load(f)
-    _set_config_defaults(cfg)
+def run_viewer(cfg):
     x, y = sp.symbols("x y")
     f_input = cfg["surface"]["equation"].strip()
     f = sp.parse_expr(f_input)
@@ -322,7 +317,7 @@ if __name__ == "__main__":
     
     k1 = np.max(pcurvs, axis=1)
     k2 = np.min(pcurvs, axis=1)
-    surf.point_data['shape_index'] = 2/np.pi * np.arctan((k2+k1)/(k2-k1))
+    surf.point_data['shape_index'] = 2/np.pi * np.arctan((k2+k1)/(k2-k1+1e-8))
 
     adirs = numeric_adirs(pcurvs, pdirs)
     poly.point_data["a1"] = adirs[:, :, 0]
@@ -330,7 +325,7 @@ if __name__ == "__main__":
     surf.point_data["a1"] = adirs[:, :, 0]
     surf.point_data["a2"] = adirs[:, :, 1]
     
-    if cfg['gaussmap']:
+    if cfg['other_maps']['gaussmap']:
         gaussmap = pv.Plotter()
         gauss_poly = pv.PolyData(poly['normals'])
         gauss_poly['shape_index'] = surf.point_data['shape_index']
@@ -342,7 +337,7 @@ if __name__ == "__main__":
         )
         gaussmap.show()
     
-    if cfg['asymptotic_spherical_map']:
+    if cfg['other_maps']['asymptotic_spherical_map']:
         asmap1, asmap2 = asym_map(adirs, poly=surf)
         asplot = pv.Plotter()
         asplot.add_axes()
@@ -351,7 +346,6 @@ if __name__ == "__main__":
         asplot.add_mesh(asmap1)
         asplot.add_mesh(asmap2)
         asplot.show()
-    
     if cfg['surface']['plot']:
         plotter = pv.Plotter()
         plotter.add_axes()
@@ -393,7 +387,7 @@ if __name__ == "__main__":
                 a2_arrows, color=cfg["asymptotic_dirs"]["colors"][1], line_width=3
             )
 
-        if cfg["parabolic_curves"]:
+        if cfg['other_maps']["parabolic_curves"]:
             pos_parabolic = surf.contour([0.0], scalars="kg_over")
             neg_parabolic = surf.contour([0.0], scalars="kg_under")
             parabolic = pos_parabolic.merge(neg_parabolic)
@@ -401,9 +395,19 @@ if __name__ == "__main__":
 
         if cfg["principal_dirs"]["draw_curves"]:
             source_mask = np.zeros(X.shape).astype(bool)
+            # print(source_mask.shape, poly.point_data['d1'].shape)
             source_mask[::7, ::7] = True
-            source_mask = source_mask.ravel()
-            source_pts = pv.PolyData(points[source_mask])
+            source_mask_flat = source_mask.ravel()
+            source_pts = pv.PolyData(points[source_mask_flat])
+            
+            # plt.streamplot(
+            #     X[::7,::7],
+            #     Y[::7,::7],
+            #     poly.point_data['d1'].reshape(*X.shape, 3)[::7,::7,0],
+            #     poly.point_data['d1'].reshape(*X.shape, 3)[::7,::7,1],
+            # )
+            # plt.show()
+            
             streamlines1 = surf.copy().streamlines_from_source(
                 source_pts,
                 vectors="d1",
@@ -435,7 +439,7 @@ if __name__ == "__main__":
                 color=cfg["principal_dirs"]["colors"][1],
             )
             
-        if cfg['ridges']:
+        if cfg['other_maps']['ridges']:
             # ridges are local extrema of principal curvatures when traveling in a principal direction
             ridge_pts1, ridge_pts2 = find_ridges(X, Y, f_vals, pdirs, pcurvs)
             ridge_poly1 = pv.PolyData(ridge_pts1)
@@ -479,9 +483,15 @@ if __name__ == "__main__":
                 color=cfg["asymptotic_dirs"]["colors"][1],
             )
         
-            if cfg['flecnodes']:
+            if cfg['other_maps']['flecnodes']:
                 flecnodes = find_flecnodes(f_vals, pdirs, pcurvs, streamlines1, streamlines2)
                 flec_pts = pv.PolyData(flecnodes)
                 plotter.add_mesh(flec_pts, scalars=None, point_size=15, color='red')
 
         plotter.show()
+
+if __name__=="__main__":
+    with open(sys.argv[1]) as f:
+            config = yaml.safe_load(f)
+    _set_config_defaults(config)
+    run_viewer(config)

@@ -1,0 +1,7 @@
+einops>=0.8.1
+matplotlib>=3.7.0
+numpy>=1.23.5
+pyvista>=0.44.2
+PyYAML>=6.0
+scipy>=1.10.0
+sympy>=1.11.1

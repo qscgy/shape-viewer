@@ -2,7 +2,7 @@
 ---
 surface:
   equation: x**3 - 3*x*y**2
-  scalars: gaussian_k
+  scalars: shape_index
 lims:
   xmin: -1
   xmax: 1
@@ -15,10 +15,14 @@ normals:
 principal_dirs:
   plot: False
   colors: ["black", "orange"]
-  draw_curves: False
+  draw_curves: True
 asymptotic_dirs:
   plot: False
   colors: ["red", "blue"]
-  draw_curves: True
-parabolic_curves: False
-asymptotic_spherical_map: True
+  draw_curves: False
+other_maps:
+  gaussmap: False
+  asymptotic_spherical_map: False
+  parabolic_curves: True
+  ridges: False
+  flecnodes: False

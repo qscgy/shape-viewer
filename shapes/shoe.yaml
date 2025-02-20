@@ -19,4 +19,9 @@ asymptotic_dirs:
   plot: False
   colors: ["red", "blue"]
   draw_curves: True
-parabolic_curves: True
+other_maps:
+  gaussmap: False
+  asymptotic_spherical_map: False
+  parabolic_curves: True
+  ridges: False
+  flecnodes: False

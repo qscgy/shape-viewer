@@ -12,11 +12,6 @@ lims:
   ymin: -1
   ymax: 1
   steps: 71
-
-# Maps to display before the main surface plot
-gaussmap: True
-asymptotic_spherical_map: True
-
 # Elements to plot on the surface 
 normals:
   plot: False
@@ -29,6 +24,9 @@ asymptotic_dirs:
   plot: False
   colors: ["red", "blue"]
   draw_curves: True
-parabolic_curves: True
-ridges: False
-flecnodes: False
+other_maps:
+  gaussmap: False
+  asymptotic_spherical_map: False
+  parabolic_curves: True
+  ridges: False
+  flecnodes: False

@@ -9,8 +9,6 @@ DEFAULT = {
                        'xmax':1,
                        'ymax':1,
                        'steps': 61},
-    'gaussmap': False,
-    'asymptotic_spherical_map': False,
     'normals': {'plot': False,
                           'color': 'green'},
     'principal_dirs': {'plot': False,
@@ -19,9 +17,13 @@ DEFAULT = {
     'asymptotic_dirs': {'plot': False,
                         'colors': ['red', 'blue'],
                         'draw_curves': False},
-    'parabolic_curves': False,
-    'ridges': False,
-    'flecnodes': False
+    'other_maps': {
+        'parabolic_curves': False,
+        'ridges': False,
+        'flecnodes': False,
+        'gaussmap': False,
+        'asymptotic_spherical_map': False,
+    },
 }
 
 def _set_config_defaults(cfg, default=DEFAULT):

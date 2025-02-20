@@ -2,7 +2,7 @@
 surface:
   equation: (x*x/2.25 + y*y/0.9025) - (x*x + y*y)**2
   scalars: "k2"
-  plot: False
+  plot: True
 lims:
   xmin: -1
   xmax: 1
@@ -15,11 +15,14 @@ normals:
 principal_dirs:
   plot: False
   colors: ["black", "orange"]
-  draw_curves: True
+  draw_curves: False
 asymptotic_dirs:
   plot: False
   colors: ["red", "blue"]
   draw_curves: False
-parabolic_curves: True
-ridges: False
-asymptotic_spherical_map: True
+other_maps:
+  gaussmap: False
+  asymptotic_spherical_map: False
+  parabolic_curves: True
+  ridges: False
+  flecnodes: False
